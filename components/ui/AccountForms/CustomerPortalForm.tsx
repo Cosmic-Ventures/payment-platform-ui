@@ -10,7 +10,7 @@ import { Tables } from '@/types_db';
 
 type Subscription = Tables<'subscriptions'>;
 type Price = Tables<'prices'>;
-type Product = Tables<'products'>;
+type Product = Tables<'plans'>;
 
 type SubscriptionWithPriceAndProduct = Subscription & {
   prices:

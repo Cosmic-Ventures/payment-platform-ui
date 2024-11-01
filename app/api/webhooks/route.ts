@@ -10,6 +10,7 @@ import {
 
 const relevantEvents = new Set([
   'product.created',
+  'plan.created',
   'product.updated',
   'product.deleted',
   'price.created',
@@ -24,7 +25,8 @@ const relevantEvents = new Set([
 export async function POST(req: Request) {
   const body = await req.text();
   const sig = req.headers.get('stripe-signature') as string;
-  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+  const webhookSecret = process.env.NEXT_PUBLIC_STRIPE_WEBHOOK_SECRET;
+  const stripeAPIkey= process.env.NEXT_PUBLIC_STRIPE_SECRET_KEY
   let event: Stripe.Event;
 
   try {
@@ -40,6 +42,7 @@ export async function POST(req: Request) {
   if (relevantEvents.has(event.type)) {
     try {
       switch (event.type) {
+        case 'plan.created':
         case 'product.created':
         case 'product.updated':
           await upsertProductRecord(event.data.object as Stripe.Product);
@@ -66,6 +69,7 @@ export async function POST(req: Request) {
           break;
         case 'checkout.session.completed':
           const checkoutSession = event.data.object as Stripe.Checkout.Session;
+      
           if (checkoutSession.mode === 'subscription') {
             const subscriptionId = checkoutSession.subscription;
             await manageSubscriptionStatusChange(
