@@ -65,7 +65,7 @@ export default function EfinoPremiumTools({
       className="container mx-auto p-4 font-sans dark:bg-gray-900 dark:text-white"
       style={{ fontFamily: "Poppins, sans-serif" }}
     >
-      <header className="flex items-center justify-between mb-8">
+      <div className="flex items-center justify-between mb-8">
         <div className="flex items-center space-x-4">
           <img
             src="https://hebbkx1anhila5yf.public.blob.vercel-storage.com/efino%20logo%20signature-lvv872S0ayEbr64TJYlAs27dhczXRD.jpg"
@@ -110,7 +110,7 @@ export default function EfinoPremiumTools({
 
         </div>
 
-      </header>
+      </div>
 
       <Tabs defaultValue="fundraising" className="space-y-4">
         <TabsList className="grid w-full grid-cols-4 gap-2 border border-zinc-700">

@@ -136,7 +136,7 @@ export default function FreeDemo({ subscription, user }: FreeDemoProps) {
       className="flex flex-col items-center container mx-auto p-4 font-sans dark:bg-gray-900 dark:text-white w-[80%] border  border-white rounded-lg"
       style={{ fontFamily: "Poppins, sans-serif" }}
     >
-      <header className="flex w-full items-center justify-between mb-8">
+      <div className="flex w-full items-center justify-between mb-8">
         <div className="flex items-center space-x-4">
           <img
             src="https://hebbkx1anhila5yf.public.blob.vercel-storage.com/efino%20logo%20signature-lvv872S0ayEbr64TJYlAs27dhczXRD.jpg"
@@ -184,7 +184,7 @@ export default function FreeDemo({ subscription, user }: FreeDemoProps) {
             </div>
           )}
         </div>
-      </header>
+      </div>
 
       <Tabs
         defaultValue="fundraising"
