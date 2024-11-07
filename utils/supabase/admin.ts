@@ -1,11 +1,18 @@
-import { toDateTime } from "@/utils/helpers";
+import { NextResponse } from 'next/server';
+import { getStatusRedirect, toDateTime } from "@/utils/helpers";
 import { stripe } from "@/utils/stripe/config";
 import { createClient } from "@supabase/supabase-js";
+import { v4 as uuidV4 } from "uuid";
 import Stripe from "stripe";
 import type { Database, Tables, TablesInsert } from "types_db";
+import { redirect } from 'next/navigation';
 
 type Product = Tables<"plans">;
 type Price = Tables<"prices">;
+type Subscription = Tables<"subscriptions">;
+type PlanMetadata = {
+  requests?: number | string | any;
+};
 
 // Change to control trial period length
 const TRIAL_PERIOD_DAYS = 0;
@@ -254,6 +261,25 @@ const manageSubscriptionStatusChange = async (
 
   const { id: uuid } = customerData!;
 
+  //check for existing Subscriptions against user ID
+  try {
+    const { error } = await supabaseAdmin
+      .from("subscriptions")
+      .delete()
+      .eq("user_id", uuid);
+
+    console.log("Deleted existing record for user");
+    if (error) {
+      throw new Error(
+        `Error deleting existing subscriptions while upserting new SUB: ${error.message}`
+      );
+    }
+  } catch (e) {
+    throw new Error(
+      `Error deleting existing subscriptions while upserting new SUB: ${e}`
+    );
+  }
+
   const subscription = await stripe.subscriptions.retrieve(
     subscriptionId,
     {
@@ -261,13 +287,41 @@ const manageSubscriptionStatusChange = async (
     },
     { apiKey: process.env.NEXT_PUBLIC_STRIPE_SECRET_KEY }
   );
+
+  //if subscription record found -> extract plan ID -> make call -> fetch metadata.requests -> pass to Insert Data
+  let initialRequests;
+  if (subscription.items.data[0]?.plan.product) {
+    const planId = subscription.items.data[0]?.plan.product;
+    try {
+      const { data, error } = await supabaseAdmin
+        .from("plans")
+        .select("metadata")
+        .eq("id", planId)
+        .single();
+
+      if (error) {
+        console.error("Error fetching Plan:", error);
+        return;
+      }
+      const metadata = data?.metadata as PlanMetadata;
+      const requestsString = metadata?.requests;
+
+      initialRequests = Number(requestsString);
+    } catch (e) {
+      console.error(
+        "Error fetching Plan against Plan ID provided by Subscription Object from Stripe: ",
+        e
+      );
+    }
+  }
+
   // Upsert the latest status of the subscription object.
   const subscriptionData: TablesInsert<"subscriptions"> = {
     id: subscription.id,
     user_id: uuid,
     metadata: subscription.metadata,
     status: subscription.status,
-    price_id: subscription.items.data[0].price.id,
+    plan_id: subscription.items.data[0].plan.product as string,
     //TODO check quantity on subscription
     // @ts-ignore
     quantity: subscription.quantity,
@@ -279,7 +333,8 @@ const manageSubscriptionStatusChange = async (
       subscription.current_period_end
     ).toISOString(),
     created: toDateTime(subscription.created).toISOString(),
-    total_requests: 0,
+    total_requests: initialRequests || 0,
+    used_requests: 0,
   };
 
   const { error: upsertError } = await supabaseAdmin
@@ -289,6 +344,8 @@ const manageSubscriptionStatusChange = async (
     throw new Error(
       `Subscription insert/update failed: ${upsertError.message}`
     );
+
+  //if successful, set the
   console.log(
     `Inserted/updated subscription [${subscription.id}] for user [${uuid}]`
   );
@@ -303,6 +360,51 @@ const manageSubscriptionStatusChange = async (
     );
 };
 
+const manageFreePlanSubscription = async (uuid: string) => {
+  let plan_id;
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("plans")
+      .select("id")
+      .eq("name", "Free Plan")
+      .single();
+    plan_id = data?.id;
+    console.log("PLAN ID found: ", plan_id);
+  } catch (e) {
+    console.error(e);
+  }
+
+  const subscriptionData: TablesInsert<"subscriptions"> = {
+    id: uuidV4(),
+    user_id: uuid,
+    metadata: null,
+    status: null,
+    plan_id: plan_id ?? "",
+    //TODO check quantity on subscription
+    // @ts-ignore
+    quantity: null,
+    cancel_at_period_end: null,
+    current_period_start: undefined,
+    current_period_end: undefined,
+    created: undefined,
+    total_requests: 20,
+  };
+
+  console.log("SUBSCRIPTION DATA: ", subscriptionData);
+
+  const { error: upsertError } = await supabaseAdmin
+    .from("subscriptions")
+    .upsert([subscriptionData]);
+  if (upsertError) {
+    throw new Error(
+      `Subscription insert/update failed: ${upsertError.message}`
+    );
+  }
+  console.log(`Inserted/updated subscription for user [${uuid}]`);
+  return true;
+  
+};
+
 export {
   upsertProductRecord,
   upsertPriceRecord,
@@ -310,4 +412,5 @@ export {
   deletePriceRecord,
   createOrRetrieveCustomer,
   manageSubscriptionStatusChange,
+  manageFreePlanSubscription,
 };

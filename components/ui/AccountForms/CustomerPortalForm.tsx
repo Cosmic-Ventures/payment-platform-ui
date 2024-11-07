@@ -1,27 +1,27 @@
-'use client';
+"use client";
 
-import Button from '@/components/ui/Button';
-import { useRouter, usePathname } from 'next/navigation';
-import { useState } from 'react';
-import { createStripePortal } from '@/utils/stripe/server';
-import Link from 'next/link';
-import Card from '@/components/ui/Card';
-import { Tables } from '@/types_db';
+import Button from "@/components/ui/Button";
+import { useRouter, usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
+import { createStripePortal } from "@/utils/stripe/server";
+import Link from "next/link";
+import Card from "@/components/ui/Card";
+import { Tables } from "@/types_db";
 
-type Subscription = Tables<'subscriptions'>;
-type Price = Tables<'prices'>;
-type Product = Tables<'plans'>;
+type Subscription = Tables<"subscriptions">;
+type Price = Tables<"prices">;
+type Plan = Tables<"plans">;
 
-type SubscriptionWithPriceAndProduct = Subscription & {
+type SubscriptionWithPriceAndPlan = Subscription & {
   prices:
     | (Price & {
-        products: Product | null;
+        plans: Plan | null;
       })
     | null;
 };
 
 interface Props {
-  subscription: SubscriptionWithPriceAndProduct | null;
+  subscription: SubscriptionWithPriceAndPlan | any;
 }
 
 export default function CustomerPortalForm({ subscription }: Props) {
@@ -31,11 +31,11 @@ export default function CustomerPortalForm({ subscription }: Props) {
 
   const subscriptionPrice =
     subscription &&
-    new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: subscription?.prices?.currency!,
-      minimumFractionDigits: 0
-    }).format((subscription?.prices?.unit_amount || 0) / 100);
+    new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: subscription?.plans?.prices?.[0]?.currency! || "usd",
+      minimumFractionDigits: 0,
+    }).format((subscription?.plans?.prices?.[0]?.unit_amount || 0) / 100);
 
   const handleStripePortalRequest = async () => {
     setIsSubmitting(true);
@@ -49,8 +49,8 @@ export default function CustomerPortalForm({ subscription }: Props) {
       title="Your Plan"
       description={
         subscription
-          ? `You are currently on the ${subscription?.prices?.products?.name} plan.`
-          : 'You are not currently subscribed to any plan.'
+          ? `You are currently on the ${subscription?.plans?.name} plan.`
+          : "You are not currently subscribed to any plan."
       }
       footer={
         <div className="flex flex-col items-start justify-between sm:flex-row sm:items-center">
@@ -67,7 +67,7 @@ export default function CustomerPortalForm({ subscription }: Props) {
     >
       <div className="mt-8 mb-4 text-xl font-semibold">
         {subscription ? (
-          `${subscriptionPrice}/${subscription?.prices?.interval}`
+          `${subscriptionPrice}/${subscription?.plans?.prices?.[0]?.interval}`
         ) : (
           <Link href="/">Choose your plan</Link>
         )}

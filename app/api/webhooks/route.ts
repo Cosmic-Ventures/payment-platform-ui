@@ -10,7 +10,6 @@ import {
 
 const relevantEvents = new Set([
   'product.created',
-  'plan.created',
   'product.updated',
   'product.deleted',
   'price.created',
@@ -42,9 +41,10 @@ export async function POST(req: Request) {
   if (relevantEvents.has(event.type)) {
     try {
       switch (event.type) {
-        case 'plan.created':
         case 'product.created':
         case 'product.updated':
+          //check for pricing object in here
+          // console.log("EVENT OBJECT RECEIEVED: ", event.data.object)
           await upsertProductRecord(event.data.object as Stripe.Product);
           break;
         case 'price.created':

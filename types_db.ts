@@ -38,7 +38,7 @@ export type Database = {
           description: string | null
           id: string
           image: string | null
-          metadata: Json | null
+          metadata: Json
           name: string
         }
         Insert: {
@@ -46,7 +46,7 @@ export type Database = {
           description?: string | null
           id: string
           image?: string | null
-          metadata?: Json | null
+          metadata: Json
           name: string
         }
         Update: {
@@ -54,7 +54,7 @@ export type Database = {
           description?: string | null
           id?: string
           image?: string | null
-          metadata?: Json | null
+          metadata?: Json
           name?: string
         }
         Relationships: []
@@ -112,12 +112,12 @@ export type Database = {
       subscriptions: {
         Row: {
           cancel_at_period_end: boolean | null
-          created: string
-          current_period_end: string
-          current_period_start: string
+          created: string | null
+          current_period_end: string | null
+          current_period_start: string | null
           id: string
           metadata: Json | null
-          price_id: string | null
+          plan_id: string
           quantity: number | null
           status: Database["public"]["Enums"]["subscription_status"] | null
           total_requests: number
@@ -126,12 +126,12 @@ export type Database = {
         }
         Insert: {
           cancel_at_period_end?: boolean | null
-          created?: string
-          current_period_end?: string
-          current_period_start?: string
+          created?: string | null
+          current_period_end?: string | null
+          current_period_start?: string | null
           id: string
           metadata?: Json | null
-          price_id?: string | null
+          plan_id: string
           quantity?: number | null
           status?: Database["public"]["Enums"]["subscription_status"] | null
           total_requests: number
@@ -140,12 +140,12 @@ export type Database = {
         }
         Update: {
           cancel_at_period_end?: boolean | null
-          created?: string
-          current_period_end?: string
-          current_period_start?: string
+          created?: string | null
+          current_period_end?: string | null
+          current_period_start?: string | null
           id?: string
           metadata?: Json | null
-          price_id?: string | null
+          plan_id?: string
           quantity?: number | null
           status?: Database["public"]["Enums"]["subscription_status"] | null
           total_requests?: number
@@ -154,10 +154,10 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "subscriptions_price_id_fkey"
-            columns: ["price_id"]
+            foreignKeyName: "subscriptions_plan_id_fkey"
+            columns: ["plan_id"]
             isOneToOne: false
-            referencedRelation: "prices"
+            referencedRelation: "plans"
             referencedColumns: ["id"]
           },
           {

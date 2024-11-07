@@ -20,8 +20,9 @@ type CheckoutResponse = {
 
 export async function checkoutWithStripe(
   price: Price,
-  redirectPath: string = "/account"
+  redirectPath: string
 ): Promise<CheckoutResponse> {
+  console.log("Redirect PATH at checkout: ", getURL(redirectPath))
   try {
     // Get the user from Supabase auth
     const supabase = createClient();
@@ -112,7 +113,7 @@ export async function checkoutWithStripe(
     } else {
       return {
         errorRedirect: getErrorRedirect(
-          redirectPath,
+          redirectPath, 
           "An unknown error occurred.",
           "Please try again later or contact a system administrator."
         ),
@@ -160,6 +161,7 @@ export async function createStripePortal(currentPath: string) {
         { apiKey: process.env.NEXT_PUBLIC_STRIPE_SECRET_KEY }
       );
       if (!url) {
+        console.log("No URL found: ", url)
         throw new Error("Could not create billing portal");
       }
       return url;

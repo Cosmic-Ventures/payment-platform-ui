@@ -1,25 +1,24 @@
-import Pricing from "@/components/ui/Pricing/Pricing";
+import { getUser } from "@/utils/supabase/queries";
 import { createClient } from "@/utils/supabase/server";
-import {
-  getPlans,
-  getSubscription,
-  getUser,
-} from "@/utils/supabase/queries";
+import { redirect } from "next/navigation";
 
-export default async function PricingPage() {
-  const supabase = createClient();
-  const [user, plans, subscription] = await Promise.all([
-    getUser(supabase),
-    getPlans(supabase),
-    getSubscription(supabase),
-  ]);
+export default async function LandingIndex() {
+
   
-  
+  const supabase = createClient()
+
+  const user = await getUser(supabase)
+
+  console.log("User in index: ", user)
+
+  if(user) {
+    redirect('/account')
+  }
+  else {
+    redirect('/pricing')
+  }
+
   return (
-    <Pricing
-      user={user}
-      plans={plans ?? []}
-      subscription={subscription}
-    />
+    <h1 className="text-4xl font-bold tracking-tight">Put Dashboard here.</h1>
   );
 }

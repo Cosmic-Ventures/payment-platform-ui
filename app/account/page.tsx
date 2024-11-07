@@ -16,10 +16,7 @@ export default async function Account() {
     getUserDetails(supabase),
     getSubscription(supabase),
   ]);
-  // const subs = await supabase.from("subscriptions").select("*").single()
-
-  console.log("SUBSCRIPTION FOUND: ", subscription);
-  console.log("USER DETAILS: ", userDetails)
+  
   
   if (!user) {
     return redirect("/signin");
@@ -38,7 +35,7 @@ export default async function Account() {
         </div>
       </div>
       <div className="p-4">
-        <CustomerPortalForm subscription={subscription} />
+        <CustomerPortalForm subscription={subscription || null} />
         <NameForm userName={userDetails?.full_name ?? ""} />
         <EmailForm userEmail={user.email} />
       </div>

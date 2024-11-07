@@ -193,6 +193,7 @@ export async function signUp(formData: FormData) {
       'Sign up failed.',
       error.message
     );
+    console.log("ERROR: ", error)
   } else if (data.session) {
     redirectPath = getStatusRedirect('/', 'Success!', 'You are now signed in.');
   } else if (
@@ -207,7 +208,8 @@ export async function signUp(formData: FormData) {
     );
   } else if (data.user) {
     redirectPath = getStatusRedirect(
-      '/',
+      // Add a waiting page (maybe)
+      '/signin/password_signin',
       'Success!',
       'Please check your email for a confirmation link. You may now close this tab.'
     );

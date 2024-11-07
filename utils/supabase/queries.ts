@@ -8,17 +8,23 @@ export const getUser = cache(async (supabase: SupabaseClient) => {
   return user;
 });
 
-export const getSubscription = cache(async (supabase: SupabaseClient) => {
+export const getSubscription = cache(async (supabase: SupabaseClient): Promise<any | null> => {
   try {
     const { data: subscription, error } = await supabase
       .from("subscriptions")
-      .select("*, prices(*, products(*))")
-      .in("status", ["trialing", "active"])
-      .maybeSingle();
+      .select("*, plans(*, prices(*))")
+      // .in("status", ["trialing", "active"])
+      .single();
+
+    if (error) {
+      console.error("ERROR while fetching Subscriptions: ", error);
+      return null;
+    }
 
     return subscription;
   } catch (e) {
-    console.error("ERROR while fetching Subscriptions: ", e)
+    console.error("ERROR while fetching Subscriptions: ", e);
+    return null;
   }
 });
 
