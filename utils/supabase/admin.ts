@@ -1,11 +1,12 @@
-import { NextResponse } from 'next/server';
+import { metadata } from "./../../app/layout";
+import { NextResponse } from "next/server";
 import { getStatusRedirect, toDateTime } from "@/utils/helpers";
 import { stripe } from "@/utils/stripe/config";
 import { createClient } from "@supabase/supabase-js";
 import { v4 as uuidV4 } from "uuid";
 import Stripe from "stripe";
-import type { Database, Tables, TablesInsert } from "types_db";
-import { redirect } from 'next/navigation';
+import type { Database, Tables, TablesInsert, TablesUpdate } from "types_db";
+import { redirect } from "next/navigation";
 
 type Product = Tables<"plans">;
 type Price = Tables<"prices">;
@@ -147,6 +148,7 @@ const createOrRetrieveCustomer = async ({
 
   let stripeCustomerId: string | undefined;
 
+  //Retrieval via ID extracted from  Customer record from Supabase
   if (existingSupabaseCustomer?.stripe_customer_id) {
     try {
       const existingStripeCustomer = await stripe.customers.retrieve(
@@ -159,6 +161,7 @@ const createOrRetrieveCustomer = async ({
     }
   }
 
+  //retrieval via email, if ID fails
   if (!stripeCustomerId) {
     try {
       const stripeCustomers = await stripe.customers.list(
@@ -174,6 +177,7 @@ const createOrRetrieveCustomer = async ({
     }
   }
 
+  //Create Customer if doesnt exist
   if (!stripeCustomerId) {
     console.log("NO CUSTOMER PRESENT, creating customer in Stripe first.");
     try {
@@ -244,59 +248,13 @@ const copyBillingDetailsToCustomer = async (
     throw new Error(`Customer update failed: ${updateError.message}`);
 };
 
-const manageSubscriptionStatusChange = async (
-  subscriptionId: string,
-  customerId: string,
-  createAction = false
-) => {
-  // Get customer's UUID from mapping table.
-  const { data: customerData, error: noCustomerError } = await supabaseAdmin
-    .from("customers")
-    .select("id")
-    .eq("stripe_customer_id", customerId)
-    .single();
-  console.log("CREATING SUBSCRIPTION");
-  if (noCustomerError)
-    throw new Error(`Customer lookup failed: ${noCustomerError.message}`);
-
-  const { id: uuid } = customerData!;
-
-  //check for existing Subscriptions against user ID
-  try {
-    const { error } = await supabaseAdmin
-      .from("subscriptions")
-      .delete()
-      .eq("user_id", uuid);
-
-    console.log("Deleted existing record for user");
-    if (error) {
-      throw new Error(
-        `Error deleting existing subscriptions while upserting new SUB: ${error.message}`
-      );
-    }
-  } catch (e) {
-    throw new Error(
-      `Error deleting existing subscriptions while upserting new SUB: ${e}`
-    );
-  }
-
-  const subscription = await stripe.subscriptions.retrieve(
-    subscriptionId,
-    {
-      expand: ["default_payment_method"],
-    },
-    { apiKey: process.env.NEXT_PUBLIC_STRIPE_SECRET_KEY }
-  );
-
-  //if subscription record found -> extract plan ID -> make call -> fetch metadata.requests -> pass to Insert Data
-  let initialRequests;
-  if (subscription.items.data[0]?.plan.product) {
-    const planId = subscription.items.data[0]?.plan.product;
+const getPlansRequests = async (planID: string) => {
+  if (planID) {
     try {
       const { data, error } = await supabaseAdmin
         .from("plans")
         .select("metadata")
-        .eq("id", planId)
+        .eq("id", planID)
         .single();
 
       if (error) {
@@ -306,7 +264,7 @@ const manageSubscriptionStatusChange = async (
       const metadata = data?.metadata as PlanMetadata;
       const requestsString = metadata?.requests;
 
-      initialRequests = Number(requestsString);
+      return Number(requestsString);
     } catch (e) {
       console.error(
         "Error fetching Plan against Plan ID provided by Subscription Object from Stripe: ",
@@ -314,41 +272,187 @@ const manageSubscriptionStatusChange = async (
       );
     }
   }
+};
 
-  // Upsert the latest status of the subscription object.
-  const subscriptionData: TablesInsert<"subscriptions"> = {
-    id: subscription.id,
-    user_id: uuid,
-    metadata: subscription.metadata,
-    status: subscription.status,
-    plan_id: subscription.items.data[0].plan.product as string,
-    //TODO check quantity on subscription
-    // @ts-ignore
-    quantity: subscription.quantity,
-    cancel_at_period_end: subscription.cancel_at_period_end,
-    current_period_start: toDateTime(
-      subscription.current_period_start
-    ).toISOString(),
-    current_period_end: toDateTime(
-      subscription.current_period_end
-    ).toISOString(),
-    created: toDateTime(subscription.created).toISOString(),
-    total_requests: initialRequests || 0,
-    used_requests: 0,
-  };
-
-  const { error: upsertError } = await supabaseAdmin
-    .from("subscriptions")
-    .upsert([subscriptionData]);
-  if (upsertError)
-    throw new Error(
-      `Subscription insert/update failed: ${upsertError.message}`
-    );
-
-  //if successful, set the
-  console.log(
-    `Inserted/updated subscription [${subscription.id}] for user [${uuid}]`
+const manageSubscriptionStatusChange = async (
+  subscriptionId: string,
+  customerId: string,
+  createAction: boolean
+) => {
+  const subscription = await stripe.subscriptions.retrieve(
+    subscriptionId,
+    {
+      expand: ["default_payment_method"],
+    },
+    { apiKey: process.env.NEXT_PUBLIC_STRIPE_SECRET_KEY }
   );
+
+  console.log("Subscription object from STRIPE: ", subscription);
+
+  // Get customer's UUID from mapping table.
+
+  //Get Supabase User ID
+  console.log("FETCHING ID");
+  const { data: customerData, error: noCustomerError } = await supabaseAdmin
+    .from("customers")
+    .select("id")
+    .eq("stripe_customer_id", customerId)
+    .single();
+
+  if (noCustomerError)
+    throw new Error(`Customer lookup failed: ${noCustomerError.message}`);
+  const { id: uuid } = customerData!;
+
+  console.log("CHECKING FOR EXISTING RECORD");
+
+  const { data: subRecord, error } = await supabaseAdmin
+    .from("subscriptions")
+    .select("*")
+    .eq("user_id", uuid)
+    .single();
+
+  //NO subscription record, fully new subscription
+  if (!subRecord) {
+    console.log("NO subscriptions found in DB, new subscription entirely.");
+    //Initialise requests count
+    let initialRequests;
+    if (subscription.items.data[0]?.plan.product) {
+      initialRequests = await getPlansRequests(
+        subscription.items.data[0]?.plan.product as string
+      );
+    }
+
+    //prepare new record
+    const subscriptionData: TablesInsert<"subscriptions"> = {
+      id: subscription.id,
+      user_id: uuid,
+      metadata: subscription.metadata,
+      status: subscription.status,
+      plan_id: subscription.items.data[0].plan.product as string,
+      //TODO check quantity on subscription
+      // @ts-ignore
+      quantity: subscription.quantity,
+      cancel_at_period_end: subscription.cancel_at_period_end,
+      current_period_start: toDateTime(
+        subscription.current_period_start
+      ).toISOString(),
+      current_period_end: toDateTime(
+        subscription.current_period_end
+      ).toISOString(),
+      created: toDateTime(subscription.created).toISOString(),
+      total_requests: initialRequests || 0,
+      used_requests: 0,
+    };
+
+    //insert new record.
+    const { error: upsertError } = await supabaseAdmin
+      .from("subscriptions")
+      .upsert([subscriptionData]);
+    if (upsertError)
+      throw new Error(
+        `Subscription insert/update failed: ${upsertError.message}`
+      );
+
+    //if successful, set the
+    console.log(
+      `Inserted/updated subscription [${subscription.id}] for user [${uuid}]`
+    );
+  }
+
+  //New Subscription -> join with previous
+  else if (subRecord.id !== subscription.id) {
+    console.log("IDs do not match, could be a new subscription.");
+    if (
+      subscriptionId !== subRecord.id &&
+      subscription.cancel_at_period_end === false &&
+      subscription.status === "active"
+    ) {
+      console.log("New purchase.");
+
+      //check for remaining requests and carry over
+      let leftoverRequests = 0;
+      leftoverRequests = subRecord.total_requests - subRecord.used_requests;
+      if (subscription.items.data[0]?.plan.product) {
+        const newRequests = await getPlansRequests(
+          subscription.items.data[0]?.plan.product as string
+        );
+        if (newRequests !== undefined && newRequests !== 0) {
+          leftoverRequests += newRequests;
+        } else {
+          throw new Error(
+            `Error while initialising Request Count, while updating subscription. newRequests came ${newRequests}`
+          );
+        }
+      }
+
+      //Delete exisiting subscription
+      const { data: deletionRes, error: deletionError } = await supabaseAdmin
+        .from("subscriptions")
+        .delete()
+        .eq("user_id", uuid)
+        .single();
+      if (!deletionRes) {
+        console.log(
+          "Deletion for existing/old record successful, onto inserting "
+        );
+      }
+      if (deletionError) {
+        throw new Error(
+          `Error removing existing record while upserting new one during Update Subscription: \n ${deletionError.message}`
+        );
+      }
+
+      //insert new record
+      const newSubscriptionRecord: Subscription = {
+        cancel_at_period_end: subscription.cancel_at_period_end,
+        created: toDateTime(subscription.created).toISOString(),
+        current_period_end: toDateTime(
+          subscription.current_period_end
+        ).toISOString(),
+        current_period_start: toDateTime(
+          subscription.current_period_start
+        ).toISOString(),
+        id: subscriptionId,
+        metadata: null,
+        plan_id: (subscription.items.data[0]?.plan.product as string) || "",
+        quantity: null,
+        status: "active",
+        total_requests: leftoverRequests,
+        used_requests: 0,
+        user_id: uuid,
+      };
+
+      const { data: insertionRes, error: insertionError } = await supabaseAdmin
+        .from("subscriptions")
+        .insert(newSubscriptionRecord)
+        .single();
+      if (insertionRes) {
+        console.log(
+          "New Record added, updated user's Subscription successfully: ",
+          insertionRes
+        );
+      }
+      if (insertionError) {
+        throw new Error(
+          `Error inserting new record while updating subscription: \n ${insertionError.message}`
+        );
+      }
+    }
+
+    if (error) {
+      throw new Error(
+        `Error fetching existing subscriptions while inserting/updating new SUB: ${error}`
+      );
+    }
+  }
+
+  //Refer to cancellation, only statuses changed referring to same Subscription
+  else if (subRecord.id === subscription.id) {
+    console.log(
+      "IDs matched, both records refer to the same Subscription. Could be a status update."
+    );
+    // await manageSubscriptionUpdate(subscriptionId, customerId);
+  }
 
   // For a new subscription copy the billing details to the customer object.
   // NOTE: This is a costly operation and should happen at the very end.
@@ -360,15 +464,117 @@ const manageSubscriptionStatusChange = async (
     );
 };
 
+const manageSubscriptionUpdate = async (
+  subscriptionId: string,
+  customerId: string,
+  prevAttributes: Partial<Stripe.Subscription>
+) => {
+  //extract existing Subscription ID and check against the one received
+  const subscription = await stripe.subscriptions.retrieve(
+    subscriptionId,
+    {
+      expand: ["default_payment_method"],
+    },
+    { apiKey: process.env.NEXT_PUBLIC_STRIPE_SECRET_KEY }
+  );
+
+  let userId;
+
+  const { data: customer, error: customerError } = await supabaseAdmin
+    .from("customers")
+    .select("id")
+    .eq("stripe_customer_id", customerId)
+    .single();
+  if (customerError) {
+    throw new Error(
+      `Error fetching customer record against ID provided:\n ${customerError.message}`
+    );
+  }
+
+  userId = customer.id;
+
+  if (userId) {
+    const { data: subscriptionData, error: subscriptionError } =
+      await supabaseAdmin
+        .from("subscriptions")
+        .select("*")
+        .eq("user_id", userId)
+        .single();
+    if (subscriptionError) {
+      throw new Error(
+        `Error retrieving existing subscription record against User ID: \n ${subscriptionError.message}`
+      );
+    }
+
+    if (subscriptionData.id) {
+      if (subscriptionId === subscriptionData.id) {
+        console.log("IDs have matched.");
+
+        //Cancellation
+        if (
+          subscription.cancel_at_period_end === true &&
+          subscription?.cancellation_details?.reason ===
+            "cancellation_requested"
+        ) {
+
+          //Delete subscription from Stripe
+          
+
+          console.log("Cancellation event triggered, update record in DB.");
+          const { data: updateRes, error: updateError } = await supabaseAdmin
+            .from("subscriptions")
+            .update({ status: "canceled", cancel_at_period_end: true })
+            .eq("id", subscriptionId)
+            .single();
+          if (updateError) {
+            throw new Error(
+              `Error updating Subscription's cancellation status: \n ${updateError.message}`
+            );
+          } else {
+            console.log("Cancellation scheduled successfully: ", updateRes);
+          }
+        }
+
+        // Reactivation
+        else if (
+          subscription.cancel_at_period_end === false &&
+          prevAttributes.cancel_at_period_end === true
+        ) {
+          console.log("Renewal requested. Update record in DB accordingly.");
+          const { data: updateRes, error: updateError } = await supabaseAdmin
+            .from("subscriptions")
+            .update({ status: "active", cancel_at_period_end: false })
+            .eq("id", subscriptionId)
+            .single();
+          if (updateError) {
+            throw new Error(
+              `Error updating Subscription's renewal status: \n ${updateError.message}`
+            );
+          } else {
+            console.log("Cancellation scheduled successfully: ", updateRes);
+          }
+        }
+      }
+    } else {
+      console.log(
+        "Subscription ID not present in Data object: ",
+        subscriptionData
+      );
+    }
+  }
+};
+
 const manageFreePlanSubscription = async (uuid: string) => {
   let plan_id;
+  let metadata;
   try {
     const { data, error } = await supabaseAdmin
       .from("plans")
-      .select("id")
+      .select("*")
       .eq("name", "Free Plan")
       .single();
     plan_id = data?.id;
+    metadata = data?.metadata as PlanMetadata;
     console.log("PLAN ID found: ", plan_id);
   } catch (e) {
     console.error(e);
@@ -387,7 +593,7 @@ const manageFreePlanSubscription = async (uuid: string) => {
     current_period_start: undefined,
     current_period_end: undefined,
     created: undefined,
-    total_requests: 20,
+    total_requests: metadata?.requests || 10,
   };
 
   console.log("SUBSCRIPTION DATA: ", subscriptionData);
@@ -402,7 +608,6 @@ const manageFreePlanSubscription = async (uuid: string) => {
   }
   console.log(`Inserted/updated subscription for user [${uuid}]`);
   return true;
-  
 };
 
 export {
@@ -413,4 +618,5 @@ export {
   createOrRetrieveCustomer,
   manageSubscriptionStatusChange,
   manageFreePlanSubscription,
+  manageSubscriptionUpdate,
 };

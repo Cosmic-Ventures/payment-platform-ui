@@ -27,7 +27,7 @@ export default async function PricingIndex() {
         .eq("id", user?.id)
         .single();
 
-      if (!customer && !subscription) {
+      if (!customer && (!subscription || subscription?.plans?.name === "Free Plan")) {
         existingCustomer = false;
       } else {
         existingCustomer = true;

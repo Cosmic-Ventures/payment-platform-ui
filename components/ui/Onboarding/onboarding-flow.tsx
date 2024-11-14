@@ -1,5 +1,5 @@
 "use client";
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { Button } from "@/primitives/button";
 import {
   Card,
@@ -23,22 +23,40 @@ import {
   FileVideo,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { createClient } from "@/utils/supabase/client";
+import { getUser } from "@/utils/supabase/queries";
+import { User } from "@supabase/supabase-js";
 // import { useTheme } from "next-themes"
+
+type Document = { type: any; name: any; content: any };
 
 export default function OnboardingFlow() {
   // const { theme, setTheme } = useTheme();
+  const supabase = createClient();
   const [step, setStep] = useState(1);
-  const [formData, setFormData] = useState({
+  const fileUploadRef = useRef<HTMLInputElement>(null);
+  const [formData, setFormData] = useState<{
+    fullName: string;
+    email: string;
+    companyName: string;
+    industry: string;
+    fundingStage: string;
+    documents: Document[];
+  }>({
     fullName: "",
     email: "",
     companyName: "",
     industry: "",
     fundingStage: "",
     documents: [
-      { type: "url", content: "https://www.ourcompany.com" },
-      { type: "file", name: "pitch_deck.pptx" },
-      { type: "file", name: "financial_report.xlsx" },
-      { type: "file", name: "executive_summary.pdf" },
+      {
+        type: "url",
+        name: "https://www.ourcompany.com",
+        content: "https://www.ourcompany.com",
+      },
+      { type: "file", name: "pitch_deck.pptx", content: null },
+      { type: "file", name: "financial_report.xlsx", content: null },
+      { type: "file", name: "executive_summary.pdf", content: null },
     ],
   });
 
@@ -56,7 +74,31 @@ export default function OnboardingFlow() {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
-  const handleNextStep = () => {
+  const handleNextStep = async (handleUploads?: boolean) => {
+    if (handleUploads === true) {
+      const user: User | null = await getUser(supabase);
+      if (user) {
+        //create folder if not present
+        // const {data, error} = await supabase.storage.from("onboarding-docs").
+        console.log("User found: ", user);
+        formData.documents
+          .filter((item: any) => item.type === "file" && item.content)
+          .map(async (item: any, index: number) => {
+            const { data, error } = await supabase.storage
+              .from("onboarding-docs")
+              .upload(`/${user.id}/${item?.name}`, item.content);
+            if (error) {
+              throw new Error(
+                `Error while File ${item.name} from uploaded files: \n`,
+                error
+              );
+            }
+            console.log("Response for File Upload to bucket: ", data);
+          });
+      } else {
+        console.log("Unauthenticated, user not found: ", user);
+      }
+    }
     setStep(step + 1);
   };
 
@@ -70,26 +112,41 @@ export default function OnboardingFlow() {
     }
   };
 
-  const handleFileUpload = (e: any) => {
-    const files = Array.from(e.target.files);
-    setFormData({
-      ...formData,
-      documents: [
-        ...formData.documents,
-        ...files.map((file: any) => ({ type: "file", name: file?.name })),
-      ],
-    });
-  };
-
-  const handleUrlAdd = () => {
-    const url = prompt("Enter the URL of your document:");
-    if (url) {
-      setFormData({
-        ...formData,
-        documents: [...formData.documents, { type: "url", content: url }],
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e?.currentTarget?.files && e?.currentTarget?.files?.length > 0) {
+      const files = Array.from((e?.currentTarget?.files as FileList) || []);
+      console.log("FILES: ", files);
+      setFormData((formData) => {
+        return {
+          ...formData,
+          documents: [
+            ...formData.documents,
+            ...files.map((item) => {
+              return {
+                type: "file",
+                name: item?.name,
+                content: item,
+              };
+            }),
+          ],
+        };
       });
+    } else {
+      console.log(
+        "File upload event didnt trigger, no change detected possibly"
+      );
     }
   };
+
+  // const handleUrlAdd = () => {
+  //   const url = prompt("Enter the URL of your document:");
+  //   if (url) {
+  //     setFormData({
+  //       ...formData,
+  //       documents: [...formData.documents, { type: "url", content: url }],
+  //     });
+  //   }
+  // };
 
   const renderProgressBar = () => (
     <div className="flex flex-col items-center mt-8">
@@ -170,7 +227,7 @@ export default function OnboardingFlow() {
             <CardFooter>
               <Button
                 className="w-full bg-[#91d02d] hover:bg-[#7bb369] text-white"
-                onClick={handleNextStep}
+                onClick={() => handleNextStep(false)}
               >
                 Next
                 <ArrowRight className="ml-2 h-4 w-4" />
@@ -217,7 +274,7 @@ export default function OnboardingFlow() {
               </Button>
               <Button
                 className="bg-[#91d02d] hover:bg-[#7bb369] text-white"
-                onClick={handleNextStep}
+                onClick={() => handleNextStep(false)}
               >
                 Next
                 <ArrowRight className="ml-2 h-4 w-4" />
@@ -238,23 +295,25 @@ export default function OnboardingFlow() {
               <div className="grid grid-cols-2 gap-4">
                 <Button
                   variant="outline"
-                  //   onClick={() => document.getElementById("file-upload").click()}
+                  onClick={() => fileUploadRef?.current?.click()}
                 >
+                  <input
+                    id="file-upload"
+                    type="file"
+                    multiple
+                    className="hidden h-full w-full"
+                    ref={fileUploadRef}
+                    onChange={handleFileUpload}
+                    accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.csv,.txt"
+                  />
                   <Upload className="mr-2 h-4 w-4" />
                   Upload Files
                 </Button>
-                <input
-                  id="file-upload"
-                  type="file"
-                  multiple
-                  className="hidden"
-                  onChange={handleFileUpload}
-                  accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.csv,.txt"
-                />
-                <Button variant="outline" onClick={handleUrlAdd}>
+
+                {/* <Button variant="outline" onClick={handleUrlAdd}>
                   <Link className="mr-2 h-4 w-4" />
                   Add URL
-                </Button>
+                </Button> */}
               </div>
               <div className="mt-4">
                 <h4 className="text-sm font-medium mb-2">
@@ -295,7 +354,9 @@ export default function OnboardingFlow() {
               </Button>
               <Button
                 className="bg-[#91d02d] hover:bg-[#7bb369] text-white"
-                onClick={handleNextStep}
+                onClick={async () => {
+                  await handleNextStep(true);
+                }}
               >
                 Next
                 <ArrowRight className="ml-2 h-4 w-4" />
@@ -348,7 +409,7 @@ export default function OnboardingFlow() {
           alt="Efino Logo"
           className="h-12"
         /> */}
-        {/* <Button
+      {/* <Button
           variant="ghost"
           onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
         >

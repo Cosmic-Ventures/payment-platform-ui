@@ -9,8 +9,6 @@ export default async function LandingIndex() {
 
   const user = await getUser(supabase)
 
-  console.log("User in index: ", user)
-
   if(user) {
     redirect('/account')
   }
